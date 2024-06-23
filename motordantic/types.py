@@ -187,7 +187,7 @@ class Relation(Generic[T]):
         self.document_class = document_class
 
     async def get(self) -> Optional[BaseModel]:
-        result = await self.document_class.Q.find_one(_id=self.db_ref.id, with_relations_objects=True)  # type: ignore
+        result = await self.document_class.Q().find_one(_id=self.db_ref.id, with_relations_objects=True)  # type: ignore
         return result
 
     @classmethod

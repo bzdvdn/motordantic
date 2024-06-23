@@ -13,12 +13,12 @@ class TicketForQuery(Document):
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def drop_ticket_collection(event_loop):
     yield
-    await TicketForQuery.Q.drop_collection(force=True)
+    await TicketForQuery.Q().drop_collection(force=True)
 
 
 def test_query_organization(connection):
     query = Q(name="123") | Q(name__ne="124") & Q(position=1) | Q(position=2)
-    data = query.to_query(TicketForQuery.manager._builder)
+    data = query.to_query(TicketForQuery.Q())
     value = {
         "$or": [
             {"name": "123"},
@@ -35,17 +35,17 @@ async def test_query_result(connection):
         TicketForQuery(name="first", position=1),
         TicketForQuery(name="second", position=2),
     ]
-    inserted = await TicketForQuery.Q.insert_many(query)
+    inserted = await TicketForQuery.Q().insert_many(query)
     assert inserted == 2
 
     query = Q(name="first") | Q(position=1) & Q(name="second")
-    data = await TicketForQuery.Q.find_one(query)
+    data = await TicketForQuery.Q().find_one(query)
     assert data.name == "first"
 
     query = Q(position=3) | Q(position=1) & Q(name="second")
-    data = await TicketForQuery.Q.find_one(query)
+    data = await TicketForQuery.Q().find_one(query)
     assert data is None
 
     query = Q(position=3) | Q(position=2) & Q(name="second")
-    data = await TicketForQuery.Q.find_one(query)
+    data = await TicketForQuery.Q().find_one(query)
     assert data.name == "second"

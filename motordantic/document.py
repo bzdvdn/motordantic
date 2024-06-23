@@ -152,7 +152,7 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
         if not all([isinstance(index, IndexModel) for index in indexes]):
             raise ValueError("indexes must be list of IndexModel instances")
         if indexes:
-            db_indexes = await cls.Q.list_indexes()
+            db_indexes = await cls.Q().list_indexes()
             indexes_to_create = [
                 i for i in indexes if i.document["name"] not in db_indexes
             ]
@@ -164,13 +164,13 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
             result = []
             if indexes_to_create:
                 try:
-                    result = await cls.Q.create_indexes(indexes_to_create)
+                    result = await cls.Q().create_indexes(indexes_to_create)
                 except MotordanticConnectionError:
                     pass
             if indexes_to_delete:
                 for index_name in indexes_to_delete:
-                    await cls.Q.drop_index(index_name)
-                db_indexes = await cls.Q.list_indexes()
+                    await cls.Q().drop_index(index_name)
+                db_indexes = await cls.Q().list_indexes()
             indexes = set(list(db_indexes.keys()) + result)
         setattr(cls, "__indexes__", indexes)
 
@@ -185,7 +185,7 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
                 "data",
                 "querybuilder",
                 "Q",
-                "Qsync",
+                "QSync",
                 "pk",
                 "_query_data",
                 "_mongo_query_data",
@@ -207,7 +207,7 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
     @classmethod
     def parse_obj(cls, data: Any) -> Any:
         if IS_PYDANTIC_V2:
-            obj = super().model_validate(data)
+            obj = super().model_validate(data)  # type: ignore
         else:
             obj = super().parse_obj(data)
         if "_id" in data:
@@ -244,9 +244,9 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
                     continue
                 else:
                     data[f"{field}__set"] = getattr(self, field)
-            await self.Q.update_one(
+            await self.Q().update_one(
                 session=session,
-                **data,
+                **data,  # type: ignore
             )
             return self
         data = {
@@ -254,11 +254,11 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
             for field, value in self.__dict__.items()
             if field in self.model_fields
         }
-        object_id = await self.Q.insert_one(
+        object_id = await self.Q().insert_one(
             session=session,
             **data,
         )
-        self._id = object_id
+        self._id = object_id  # type: ignore
         return self
 
     def save_sync(
@@ -269,7 +269,7 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
         return self._io_loop.run_until_complete(self.save(updated_fields, session))
 
     async def delete(self) -> None:
-        await self.Q.delete_one(_id=self.pk)
+        await self.Q().delete_one(_id=self.pk)
 
     def delete_sync(self) -> None:
         return self._io_loop.run_until_complete(self.delete())
@@ -285,9 +285,9 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
     def manager(cls) -> ODMManager:
         return cls.__manager__
 
-    @classproperty
+    @classmethod
     def Q(cls) -> "Builder":
-        return cls.manager.querybuilder
+        return cls.manager.querybuilder()
 
     if not IS_PYDANTIC_V2:
 
@@ -295,9 +295,9 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
         def model_fields(cls):
             return cls.__fields__
 
-    @classproperty
-    def Qsync(cls) -> "SyncQueryBuilder":
-        return cls.manager.sync_querybuilder
+    @classmethod
+    def QSync(cls) -> "SyncQueryBuilder":
+        return cls.manager.sync_querybuilder()
 
     def model_dump(  # type: ignore
         self,

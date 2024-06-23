@@ -40,10 +40,11 @@ if TYPE_CHECKING:
 
 
 class Builder(object):
-    __slots__ = ("odm_manager",)
+    __slots__ = ("odm_manager", "_collection")
 
-    def __init__(self, odm_manager: "ODMManager"):
+    def __init__(self, odm_manager: "ODMManager", query_collectcion_name: str):
         self.odm_manager: "ODMManager" = odm_manager
+        self._collection = self.odm_manager.get_collection(query_collectcion_name)
 
     def _validate_query_data(self, query: Dict) -> "DictStrAny":
         """main validation method
@@ -106,11 +107,11 @@ class Builder(object):
         elif isinstance(query_params, dict):
             query_params = self._validate_query_data(query_params)
         if write_concern:
-            collection = self.odm_manager.collection.with_options(  # type: ignore
+            collection = self._collection.with_options(  # type: ignore
                 write_concern=write_concern
             )
         else:
-            collection = self.odm_manager.collection
+            collection = self._collection
         # print(query_params)
         method = getattr(collection, method_name)
         query: tuple = (query_params,)
@@ -125,7 +126,7 @@ class Builder(object):
     async def get(self, session: Optional[ClientSession] = None, **query) -> "Document":
         obj = await self.find_one(session=session, **query)
         if not obj:
-            raise DoesNotExist(self.odm_manager.document.__name__) # type: ignore
+            raise DoesNotExist(self.odm_manager.document.__name__)  # type: ignore
         return obj
 
     async def count(
@@ -143,7 +144,7 @@ class Builder(object):
         Returns:
             int: count of documents
         """
-        if getattr(self.odm_manager.collection, "count_documents"):
+        if getattr(self._collection, "count_documents"):
             return await self._make_query(
                 "count_documents",
                 logical_query or query,
@@ -288,7 +289,7 @@ class Builder(object):
             list: list of distinct values
         """
         query = self._validate_query_data(query)
-        method = getattr(self.odm_manager.collection, "distinct")
+        method = getattr(self._collection, "distinct")
         return await method(key=field, filter=query, session=session)
 
     async def find_one(
@@ -345,7 +346,7 @@ class Builder(object):
                 query_params = self._check_query_args(logical_query)
             else:
                 query_params = self._validate_query_data(query)
-            find_cursor_method = getattr(self.odm_manager.collection, "find")
+            find_cursor_method = getattr(self._collection, "find")
             cursor = find_cursor_method(query_params, session=session)
             if skip_rows is not None:
                 cursor = cursor.skip(skip_rows)
@@ -591,7 +592,7 @@ class Builder(object):
         self, data: list, session: Optional[ClientSession]
     ) -> AsyncIterable:
         async def context():
-            aggregate_cursor = getattr(self.odm_manager.collection, "aggregate")
+            aggregate_cursor = getattr(self._collection, "aggregate")
 
             async for row in aggregate_cursor(data, session=session):
                 yield row
@@ -737,7 +738,7 @@ class Builder(object):
         """
         parsed_query = self._validate_raw_query(method_name, raw_query)
         try:
-            query = getattr(self.odm_manager.collection, method_name)
+            query = getattr(self._collection, method_name)
             return await query(*parsed_query, session=session)
         except AttributeError:
             raise MotordanticValidationError("invalid method name")
@@ -748,7 +749,7 @@ class Builder(object):
         Returns:
             dict: indexes result
         """
-        list_indexes_cursor = getattr(self.odm_manager.collection, "list_indexes")
+        list_indexes_cursor = getattr(self._collection, "list_indexes")
         query = list_indexes_cursor(session=session)
         index_list = await query.to_list(None)
         return_data = {}
@@ -763,7 +764,7 @@ class Builder(object):
         indexes: List[IndexModel],
         session: Optional[ClientSession] = None,
     ) -> List[str]:
-        create_indexes_cursor = getattr(self.odm_manager.collection, "create_index")
+        create_indexes_cursor = getattr(self._collection, "create_index")
         result = []
         for index in indexes:
             index_value = list(index.document["key"].items())
@@ -794,12 +795,12 @@ class Builder(object):
             bool: result message
         """
         if force:
-            await self.odm_manager.collection.drop()  # type: ignore
+            await self._collection.drop()  # type: ignore
             return True
         value = input(
             f"Are u sure for drop this collection - {self.odm_manager.document.__name__.lower()} (y, n)"  # type: ignore
         )
         if value.lower() == "y":
-            await self.odm_manager.collection.drop()  # type: ignore
+            await self._collection.drop()  # type: ignore
             return True
         return False

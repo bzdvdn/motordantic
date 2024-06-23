@@ -72,20 +72,20 @@ class Validate(Document):
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def drop_ticket_collection(event_loop):
     yield
-    await Validate.Q.drop_collection(force=True)
+    await Validate.Q().drop_collection(force=True)
 
 
 @pytest.mark.asyncio
 async def test_validate(connection):
     with pytest.raises(MotordanticValidationError):
-        await Validate.Q.find_one(array="invalid")
+        await Validate.Q().find_one(array="invalid")
 
     with pytest.raises(MotordanticValidationError):
-        await Validate.Q.find_one(_id="invalid")
+        await Validate.Q().find_one(_id="invalid")
 
     with pytest.raises(MotordanticValidationError):
-        await Validate.Q.find_one(position="invalid")
-        await Validate.Q.find_one(config="invalid")
+        await Validate.Q().find_one(position="invalid")
+        await Validate.Q().find_one(config="invalid")
 
     with pytest.raises(MotordanticValidationError):
         Validate(

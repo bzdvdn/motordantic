@@ -17,6 +17,7 @@ from .utils.pydantic import get_model_fields
 if TYPE_CHECKING:
     from .document import Document
     from .connection import MotordanticConnection
+    from motor.motor_asyncio import AsyncIOMotorClient
 
 
 class ODMManager(object):
@@ -26,9 +27,6 @@ class ODMManager(object):
     __relation_manager__: Optional["RelationManager"] = None
 
     def __init__(self, document: "Document"):
-        self._builder: Builder = Builder(self)
-        self.querybuilder = self._builder
-        self.sync_querybuilder: SyncQueryBuilder = SyncQueryBuilder(self._builder)
         self.__document__ = document
         if self.__document__.has_relations:
             self.__relation_manager__ = RelationManager(self.__document__)
@@ -48,7 +46,7 @@ class ODMManager(object):
         return self.__connection__
 
     @property
-    def motor_client(self):
+    def motor_client(self) -> "AsyncIOMotorClient":  # type: ignore
         return self.connection._get_motor_client()
 
     @property
@@ -63,14 +61,13 @@ class ODMManager(object):
             _io_loop = asyncio.new_event_loop()
         return _io_loop
 
-    @property
-    def collection(self) -> AgnosticCollection:
+    def get_collection(self, collection_name: str) -> AgnosticCollection:
         """Returns the collection for this :class:`Document`."""
         if (
             self.__collection__ is None
             or self.__collection__.database is not self.database
         ):
-            self.__collection__ = self.database.get_collection(self.document.get_collection_name())  # type: ignore
+            self.__collection__ = self.database.get_collection(collection_name)  # type: ignore
         return self.__collection__  # type: ignore
 
     async def _start_session(self) -> AgnosticClientSession:
@@ -117,12 +114,20 @@ class ODMManager(object):
                 field_param.append(param)
         return field_param, extra
 
+    def querybuilder(self) -> Builder:
+        builder = Builder(self, self.document.get_collection_name())
+        return builder
+
+    def sync_querybuilder(self) -> SyncQueryBuilder:
+        builder = Builder(self, self.document.get_collection_name())
+        return SyncQueryBuilder(builder)
+
     async def ensure_indexes(self):
         """method for create/update/delete indexes if indexes declared in Config property"""
 
         indexes = self.document.__indexes__
         if indexes:
-            db_indexes = await self.querybuilder.list_indexes()
+            db_indexes = await self.querybuilder().list_indexes()
             indexes_to_create = [
                 i for i in indexes if i.document["name"] not in db_indexes  # type: ignore
             ]
@@ -132,17 +137,24 @@ class ODMManager(object):
                 if i not in [i.document["name"] for i in indexes] and i != "_id_"  # type: ignore
             ]
             result = []
+            builder = self.querybuilder()
             if indexes_to_create:
                 try:
-                    result = await self.querybuilder.create_indexes(indexes_to_create)  # type: ignore
+                    result = await builder.create_indexes(indexes_to_create)  # type: ignore
                 except (AutoReconnect, ServerSelectionTimeoutError, NetworkTimeout):
                     pass
             if indexes_to_delete:
                 for index_name in indexes_to_delete:
-                    await self.querybuilder.drop_index(index_name)
+                    await builder.drop_index(index_name)
                 db_indexes = await self.querybuilder.list_indexes()
             indexes = set(list(db_indexes.keys()) + result)
 
 
 class DynamicCollectionODMManager(ODMManager):
-    pass
+    def querybuilder(self, collection_name: str) -> Builder:  # type: ignore
+        builder = Builder(self, collection_name)
+        return builder
+
+    def sync_querybuilder(self, collection_name: str) -> SyncQueryBuilder:  # type: ignore
+        builder = Builder(self, collection_name)
+        return SyncQueryBuilder(builder)

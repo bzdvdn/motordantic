@@ -51,7 +51,7 @@ class RelationManager(object):
     async def _get_relation_objects_by_model_class(
         self, field: str, document_class: "DocumentType", ids: list
     ) -> dict:
-        result = await document_class.Q.find(_id__in=ids, with_relations_objects=True)
+        result = await document_class.Q().find(_id__in=ids, with_relations_objects=True)
         return {field: {str(o._id): o for o in result}}
 
     async def get_relation_objects(self, pre_relation: "DictStrList") -> dict:

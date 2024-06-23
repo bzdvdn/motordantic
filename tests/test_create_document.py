@@ -21,19 +21,19 @@ class Application(Document):
 async def application_data(connection):
     application = await Application(name="test", cfg=Config(), lang="python").save()
     yield
-    await Application.Q.drop_collection(force=True)
+    await Application.Q().drop_collection(force=True)
 
 
 @pytest.mark.asyncio
 async def test_application_data(connection):
-    application = await Application.Q.find_one(name="test")
+    application = await Application.Q().find_one(name="test")
     data = application.data
     assert isinstance(data["cfg"], dict)
     assert data["cfg"]["env"] == "test"
 
-    data = await Application.Q.find_one(cfg__env="test")
+    data = await Application.Q().find_one(cfg__env="test")
     assert data.name == "test"
-    data = await Application.Q.find_one(cfg__env="invalid")
+    data = await Application.Q().find_one(cfg__env="invalid")
     assert data is None
 
 
@@ -44,5 +44,5 @@ async def test_raise_with_field_mongo_model(connection):
         app: Application
 
     with pytest.raises(MotordanticValidationError):
-        app = await Application.Q.find_one()
+        app = await Application.Q().find_one()
         d = Default(name="default", app=app)
