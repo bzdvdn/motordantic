@@ -33,7 +33,7 @@ from .property import classproperty
 from .query.extra import take_relation
 from .config import ConfigDict
 
-from .manager import ODMManager
+from .manager import ODMManager, DynamicCollectionODMManager
 
 if IS_PYDANTIC_V2:
     import pydantic.main as pydantic_main
@@ -49,7 +49,7 @@ else:
     from pydantic import root_validator  # type: ignore
 
 
-__all__ = ("Document", "DocumentMetaclass", "DocType")
+__all__ = ("Document", "DynamicCollectionDocument")
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -63,6 +63,25 @@ DocType = TypeVar("DocType", bound="Document")
 
 
 class DocumentMetaclass(PydanticModelMetaclass):  # type: ignore
+    __manager_class__ = ODMManager
+
+    @classmethod
+    def _get_document_class(mcs):  # type: ignore
+        return Document
+
+    @classmethod
+    def _proccess_is_document_defined(mcs, cls):  # type: ignore
+        if _is_document_class_defined and issubclass(cls, mcs._get_document_class()):
+            db_refs = {}
+            for k, v in cls.model_fields.items():
+                relation_info = take_relation(k, v)
+                if relation_info is not None:
+                    db_refs[k] = relation_info
+            setattr(cls, "__db_refs__", db_refs)
+            if db_refs:
+                setattr(cls, "has_relations", True)
+                setattr(cls, "__relation_manager__", RelationManager(cls))  # type: ignore
+
     def __new__(mcs, name, bases, namespace, **kwargs):  # type: ignore
         annotations = resolve_annotations(
             namespace.get("__annotations__", {}), namespace.get("__module__")
@@ -76,16 +95,7 @@ class DocumentMetaclass(PydanticModelMetaclass):  # type: ignore
         }
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
         indexes = set()
-        if _is_document_class_defined and issubclass(cls, Document):
-            db_refs = {}
-            for k, v in cls.model_fields.items():
-                relation_info = take_relation(k, v)
-                if relation_info is not None:
-                    db_refs[k] = relation_info
-            setattr(cls, "__db_refs__", db_refs)
-            if db_refs:
-                setattr(cls, "has_relations", True)
-                setattr(cls, "__relation_manager__", RelationManager(cls))  # type: ignore
+        mcs._proccess_is_document_defined(cls)
         if IS_PYDANTIC_V2:
             cls_config = getattr(cls, "model_config")
         else:
@@ -107,7 +117,7 @@ class DocumentMetaclass(PydanticModelMetaclass):  # type: ignore
         setattr(cls, "__collection_name__", collection_name)
         setattr(cls, "__indexes__", indexes)
         setattr(cls, "__database_exclude_fields__", exclude_fields)
-        setattr(cls, "__manager__", ODMManager(cls))  # type: ignore
+        setattr(cls, "__manager__", mcs.__manager_class__(cls))  # type: ignore
         return cls
 
 
@@ -428,6 +438,112 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
                         f"{field} - cant be instance of Document without Relation"
                     )
             return values
+
+
+class DynamcicCollectionMetaclass(DocumentMetaclass):
+    __manager_class__ = DynamicCollectionODMManager
+
+    @classmethod
+    def _get_document_class(mcs):  # type: ignore
+        return DynamicCollectionDocument
+
+
+class DynamicCollectionDocument(Document, metaclass=DynamcicCollectionMetaclass):
+    @classmethod
+    def Q(cls, collection_name: str) -> "QueryBuilder":  # type: ignore
+        return cls.manager.querybuilder(collection_name)
+
+    @classmethod
+    def Qsync(cls, collection_name: str) -> "SyncQueryBuilder":  # type: ignore
+        return cls.manager.sync_querybuilder(collection_name)
+
+    if IS_PYDANTIC_V2:
+
+        @model_validator(mode="before")
+        def validate_all_fields(cls, values):  # type: ignore
+            for field, value in values.items():
+                if (
+                    isinstance(value, (Document, DynamicCollectionDocument))
+                    or field in cls.__db_refs__
+                ):
+                    raise ValueError(
+                        f"{field} - cant be instance of Document|DynamicDocument or Relation Type"
+                    )
+            return values
+
+    else:
+
+        @root_validator  # type: ignore
+        def validate_all_fields(cls, values):
+            for field, value in values.items():
+                if (
+                    isinstance(value, (Document, DynamicCollectionDocument))
+                    or field in cls.__db_refs__
+                ):
+                    raise ValueError(
+                        f"{field} - cant be instance of Document|DynamicDocument or Relation Type"
+                    )
+            return values
+
+    async def save(
+        self,
+        collection_name: str,
+        updated_fields: Union[Tuple, List] = [],
+        session: Optional[AgnosticClientSession] = None,
+    ) -> Any:
+        if self._id is not None:
+            data = {
+                "_id": (
+                    self._id if isinstance(self._id, ObjectId) else ObjectId(self._id)
+                )
+            }
+            if updated_fields:
+                if not all(
+                    field in self.model_fields for field in updated_fields
+                ) or any(
+                    field in self.__motordantic_computed_fields__
+                    for field in updated_fields
+                ):
+                    raise MotordanticValidationError("invalid field in updated_fields")
+            else:
+                updated_fields = tuple(self.model_fields.keys())
+            for field in updated_fields:
+                if field in self.__motordantic_computed_fields__:
+                    continue
+                else:
+                    data[f"{field}__set"] = getattr(self, field)
+            await self.Q(collection_name).update_one(
+                session=session,
+                **data,  # type: ignore
+            )
+            return self
+        data = {
+            field: value
+            for field, value in self.__dict__.items()
+            if field in self.model_fields
+        }
+        object_id = await self.Q(collection_name).insert_one(
+            session=session,
+            **data,
+        )
+        self._id = object_id  # type: ignore
+        return self
+
+    def save_sync(
+        self,
+        collection_name: str,
+        updated_fields: Union[Tuple, List] = [],
+        session: Optional[AgnosticClientSession] = None,
+    ):
+        return self._io_loop.run_until_complete(
+            self.save(collection_name, updated_fields, session)
+        )
+
+    async def delete(self, collection_name: str) -> None:
+        await self.Q(collection_name).delete_one(_id=self.pk)
+
+    def delete_sync(self, collection_name: str) -> None:
+        return self._io_loop.run_until_complete(self.delete(collection_name))
 
 
 _is_document_class_defined = True

@@ -158,3 +158,31 @@ class DynamicCollectionODMManager(ODMManager):
     def sync_querybuilder(self, collection_name: str) -> SyncQueryBuilder:  # type: ignore
         builder = Builder(self, collection_name)
         return SyncQueryBuilder(builder)
+
+    async def ensure_indexes(self, collection_name: str):  # type: ignore
+        """method for create/update/delete indexes if indexes declared in Config property"""
+
+        indexes = self.document.__indexes__
+        if indexes:
+            db_indexes = await self.querybuilder(collection_name).list_indexes()
+            indexes_to_create = [
+                i for i in indexes if i.document["name"] not in db_indexes  # type: ignore
+            ]
+            indexes_to_delete = [
+                i
+                for i in db_indexes
+                if i not in [i.document["name"] for i in indexes] and i != "_id_"  # type: ignore
+            ]
+            result = []
+            if indexes_to_create:
+                try:
+                    result = await self.querybuilder(collection_name).create_indexes(
+                        indexes_to_create  # type: ignore
+                    )
+                except (AutoReconnect, ServerSelectionTimeoutError, NetworkTimeout):
+                    pass
+            if indexes_to_delete:
+                for index_name in indexes_to_delete:
+                    await self.querybuilder(collection_name).drop_index(index_name)
+                db_indexes = await self.querybuilder(collection_name).list_indexes()
+            indexes = set(list(db_indexes.keys()) + result)
