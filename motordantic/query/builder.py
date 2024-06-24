@@ -720,7 +720,7 @@ class Builder(object):
     async def raw_query(
         self,
         method_name: str,
-        raw_query: Union[Dict, List[Dict], Tuple[Dict]],
+        raw_query: Union[Dict[Any, Any], List[Dict[Any, Any]], Tuple[Dict[Any, Any]]],
         session: Optional[ClientSession] = None,
     ) -> Any:
         """pymongo raw query

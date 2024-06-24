@@ -5,11 +5,13 @@ import pytest
 
 from bson import ObjectId
 
-from motordantic.document import Document
+from motordantic.document import DynamicCollectionDocument
 from motordantic.exceptions import MotordanticValidationError
 
+collection_name = "dynamic_raw_user"
 
-class User(Document):
+
+class User(DynamicCollectionDocument):
     id: str
     name: str
     email: str
@@ -18,16 +20,16 @@ class User(Document):
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def innert_users(event_loop):
     yield
-    await User.Q().drop_collection(force=True)
+    await User.Q(collection_name).drop_collection(force=True)
 
 
 @pytest.mark.asyncio
 async def test_raw_insert_one(connection):
     with pytest.raises(MotordanticValidationError):
-        result = await User.Q().raw_query(
+        result = await User.Q(collection_name).raw_query(
             "insert_one", {"id": str(uuid.uuid4()), "name": {}, "email": []}
         )
-    result = await User.Q().raw_query(
+    result = await User.Q(collection_name).raw_query(
         "insert_one",
         {"id": str(uuid.uuid4()), "name": "first", "email": "first@mail.ru"},
     )
@@ -36,7 +38,7 @@ async def test_raw_insert_one(connection):
 
 @pytest.mark.asyncio
 async def test_raw_find_one(connection):
-    result = await User.Q().raw_query("find_one", {"name": "first"})
+    result = await User.Q(collection_name).raw_query("find_one", {"name": "first"})
     assert result["name"] == "first"
     assert result["email"] == "first@mail.ru"
 
@@ -44,15 +46,15 @@ async def test_raw_find_one(connection):
 @pytest.mark.asyncio
 async def test_raw_update_one(connection):
     with pytest.raises(MotordanticValidationError):
-        result = await User.Q().raw_query(
+        result = await User.Q(collection_name).raw_query(
             "update_one", [{"id": uuid.uuid4(), "name": {}, "email": []}]
         )
-    result = await User.Q().raw_query(
+    result = await User.Q(collection_name).raw_query(
         "update_one", raw_query=({"name": "first"}, {"$set": {"name": "updated"}})  # type: ignore
     )
 
     assert result.modified_count == 1
 
-    modifed_result = await User.Q().find_one(email="first@mail.ru")
+    modifed_result = await User.Q(collection_name).find_one(email="first@mail.ru")
     assert modifed_result is not None
     assert modifed_result.name == "updated"

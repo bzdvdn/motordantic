@@ -8,7 +8,7 @@ from motordantic.utils.pydantic import IS_PYDANTIC_V2
 
 if IS_PYDANTIC_V2:
     from pydantic import (
-        GetCoreSchemaHandler,
+        GetCoreSchemaHandler,  # type: ignore
     )
     from pydantic_core import CoreSchema, core_schema
     from pydantic_core.core_schema import (

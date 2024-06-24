@@ -35,7 +35,9 @@ async def test_insert_one_with_uuid_field(connection):
     assert article.article_id == uid
 
     db_article = await Article.Q().find_one(article_id=uid)
+    assert db_article is not None
     assert db_article._id == article._id
 
     db_article_hex = await Article.Q().find_one(article_id=uid.hex)
+    assert db_article_hex is not None
     assert db_article_hex._id == db_article._id
