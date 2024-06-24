@@ -91,7 +91,9 @@ class ODMManager(object):
         return self.__document__
 
     def aggregate(self) -> Aggregate:
-        aggregate = Aggregate(self.__document__)
+        aggregate = Aggregate(
+            self.__document__, self.__document__.get_collection_name()
+        )
         return aggregate
 
     def _validate_field(self, field: str) -> bool:
@@ -158,6 +160,10 @@ class DynamicCollectionODMManager(ODMManager):
     def sync_querybuilder(self, collection_name: str) -> SyncQueryBuilder:  # type: ignore
         builder = Builder(self, collection_name)
         return SyncQueryBuilder(builder)
+
+    def aggregate(self, collection_name: str) -> Aggregate:
+        aggregate = Aggregate(self.__document__, collection_name)
+        return aggregate
 
     async def ensure_indexes(self, collection_name: str):  # type: ignore
         """method for create/update/delete indexes if indexes declared in Config property"""

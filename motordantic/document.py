@@ -105,15 +105,11 @@ class DocumentMetaclass(PydanticModelMetaclass):  # type: ignore
         if IS_PYDANTIC_V2:
             cls_config["json_encoders"] = json_encoders  # type: ignore
             exclude_fields = cls_config.get("exclude_fields", tuple())  # type: ignore
-            collection_name = (
-                cls_config.get("collection_name", None) or cls.__name__.lower()
-            )
+            collection_name = cls_config.get("collection_name", None)
         else:
             setattr(cls_config, "json_encoders", json_encoders)  # type: ignore
             exclude_fields = getattr(cls_config, "exclude_fields", tuple())  # type: ignore
-            collection_name = (
-                getattr(cls_config, "collection_name", None) or cls.__name__.lower()
-            )
+            collection_name = getattr(cls_config, "collection_name", None)
         setattr(cls, "__collection_name__", collection_name)
         setattr(cls, "__indexes__", indexes)
         setattr(cls, "__database_exclude_fields__", exclude_fields)
@@ -151,6 +147,10 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
     @property
     def _io_loop(self) -> "AbstractEventLoop":
         return self.manager._io_loop
+
+    @classproperty
+    def _is_dynamic(cls) -> bool:
+        return False
 
     @classmethod
     async def ensure_indexes(cls):
@@ -204,6 +204,7 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
                 "model_extra",
                 "fields_all",
                 "_io_loop",
+                "_is_dynamic",
             )
             and isinstance(getattr(cls, prop), property)
         ]
@@ -454,8 +455,12 @@ class DynamicCollectionDocument(Document, metaclass=DynamcicCollectionMetaclass)
         return cls.manager.querybuilder(collection_name)
 
     @classmethod
-    def Qsync(cls, collection_name: str) -> "SyncQueryBuilder":  # type: ignore
+    def QSync(cls, collection_name: str) -> "SyncQueryBuilder":  # type: ignore
         return cls.manager.sync_querybuilder(collection_name)
+
+    @classproperty
+    def _is_dynamic(self) -> bool:
+        return True
 
     if IS_PYDANTIC_V2:
 
@@ -544,6 +549,40 @@ class DynamicCollectionDocument(Document, metaclass=DynamcicCollectionMetaclass)
 
     def delete_sync(self, collection_name: str) -> None:
         return self._io_loop.run_until_complete(self.delete(collection_name))
+
+    @classmethod
+    async def ensure_indexes(cls, collection_name: str):
+        """method for create/update/delete indexes if indexes declared in Config property"""
+        if IS_PYDANTIC_V2:
+            indexes = cls.model_config.get("indexes", [])
+        else:
+            indexes = getattr(cls.__config__, "indexes", [])
+        if not all([isinstance(index, IndexModel) for index in indexes]):
+            raise ValueError("indexes must be list of IndexModel instances")
+        if indexes:
+            db_indexes = await cls.Q(collection_name).list_indexes()
+            indexes_to_create = [
+                i for i in indexes if i.document["name"] not in db_indexes
+            ]
+            indexes_to_delete = [
+                i
+                for i in db_indexes
+                if i not in [i.document["name"] for i in indexes] and i != "_id_"
+            ]
+            result = []
+            if indexes_to_create:
+                try:
+                    result = await cls.Q(collection_name).create_indexes(
+                        indexes_to_create
+                    )
+                except MotordanticConnectionError:
+                    pass
+            if indexes_to_delete:
+                for index_name in indexes_to_delete:
+                    await cls.Q(collection_name).drop_index(index_name)
+                db_indexes = await cls.Q(collection_name).list_indexes()
+            indexes = set(list(db_indexes.keys()) + result)
+        setattr(cls, "__indexes__", indexes)
 
 
 _is_document_class_defined = True
