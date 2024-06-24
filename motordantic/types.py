@@ -13,9 +13,9 @@ from .custom_typing import DocumentType
 
 
 if IS_PYDANTIC_V2:
-    from pydantic import (  # type: ignore
-        GetCoreSchemaHandler,
-        GetJsonSchemaHandler,
+    from pydantic import (
+        GetCoreSchemaHandler,  # type: ignore
+        GetJsonSchemaHandler,  # type: ignore
     )
     from pydantic.json_schema import JsonSchemaValue
     from pydantic_core import CoreSchema, core_schema
