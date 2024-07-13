@@ -5,13 +5,13 @@ from contextlib import ContextDecorator
 if TYPE_CHECKING:
     from .manager import ODMManager
 
-__all__ = ('Session', 'SessionSync')
+__all__ = ("Session", "SessionSync")
 
 
 class Session(ContextDecorator):
-    __slots__ = ('_session', 'odm_manager')
+    __slots__ = ("_session", "odm_manager")
 
-    def __init__(self, odm_manager: 'ODMManager'):
+    def __init__(self, odm_manager: "ODMManager"):
         self.odm_manager = odm_manager
 
     async def __aenter__(self):
@@ -38,9 +38,9 @@ class Session(ContextDecorator):
 
 
 class SessionSync(ContextDecorator):
-    __slots__ = ('_session', 'odm_manager')
+    __slots__ = ("_session", "odm_manager")
 
-    def __init__(self, odm_manager: 'ODMManager'):
+    def __init__(self, odm_manager: "ODMManager"):
         self.odm_manager = odm_manager
 
     def __enter__(self):

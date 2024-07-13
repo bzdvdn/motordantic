@@ -229,6 +229,20 @@ async def test_session_find(connection):
 
 
 @pytest.mark.asyncio
+async def test_allow_disk_use_in_find(connection):
+    result = await Ticket.Q().find(allow_disk_use=True)
+
+    assert len(result.data) != 0
+
+
+@pytest.mark.asyncio
+async def test_batch_size(connection):
+    result = await Ticket.Q().find(batch_size=1)
+
+    assert len(result.data) != 0
+
+
+@pytest.mark.asyncio
 async def test_session_context(connection):
     async with Session(Ticket.manager) as session:
         ticket = await Ticket.Q().find_one(session=session)

@@ -117,7 +117,7 @@ class DocumentMetaclass(PydanticModelMetaclass):  # type: ignore
         return cls
 
 
-class Document(BasePydanticModel, metaclass=DocumentMetaclass):
+class BaseDocument(BasePydanticModel, metaclass=DocumentMetaclass):
     __indexes__: "SetStr" = set()
     __manager__: ODMManager
     __database_exclude_fields__: Union[Tuple, List] = tuple()
@@ -151,38 +151,6 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
     @classproperty
     def _is_dynamic(cls) -> bool:
         return False
-
-    @classmethod
-    async def ensure_indexes(cls):
-        """method for create/update/delete indexes if indexes declared in Config property"""
-        if IS_PYDANTIC_V2:
-            indexes = cls.model_config.get("indexes", [])
-        else:
-            indexes = getattr(cls.__config__, "indexes", [])
-        if not all([isinstance(index, IndexModel) for index in indexes]):
-            raise ValueError("indexes must be list of IndexModel instances")
-        if indexes:
-            db_indexes = await cls.Q().list_indexes()
-            indexes_to_create = [
-                i for i in indexes if i.document["name"] not in db_indexes
-            ]
-            indexes_to_delete = [
-                i
-                for i in db_indexes
-                if i not in [i.document["name"] for i in indexes] and i != "_id_"
-            ]
-            result = []
-            if indexes_to_create:
-                try:
-                    result = await cls.Q().create_indexes(indexes_to_create)
-                except MotordanticConnectionError:
-                    pass
-            if indexes_to_delete:
-                for index_name in indexes_to_delete:
-                    await cls.Q().drop_index(index_name)
-                db_indexes = await cls.Q().list_indexes()
-            indexes = set(list(db_indexes.keys()) + result)
-        setattr(cls, "__indexes__", indexes)
 
     @classmethod
     def _get_properties(cls) -> list:
@@ -228,6 +196,175 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
     @classmethod
     def model_validate(cls, data: Any) -> Any:
         return cls.parse_obj(data)
+
+    @classproperty
+    def fields_all(cls) -> list:
+        """return all fields with properties(not document fields)"""
+        fields = list(cls.model_fields.keys())
+        return_fields = fields + cls._get_properties()
+        return return_fields
+
+    @classproperty
+    def manager(cls) -> ODMManager:
+        return cls.__manager__
+
+    if not IS_PYDANTIC_V2:
+
+        @classproperty
+        def model_fields(cls):
+            return cls.__fields__
+
+    def model_dump(  # type: ignore
+        self,
+        *,
+        include: Optional["AbstractSetIntStr"] = None,
+        exclude: Optional["AbstractSetIntStr"] = None,
+        by_alias: bool = False,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        with_props: bool = True,
+    ) -> "DictStrAny":
+        """
+        Generate a dictionary representation of the model, optionally specifying which fields to include or exclude.
+
+        """
+        if IS_PYDANTIC_V2:
+            model_dump_func = super().model_dump  # type: ignore
+        else:
+            model_dump_func = super().dict
+        attribs = model_dump_func(
+            include=include,  # type: ignore
+            exclude=exclude,  # type: ignore
+            by_alias=by_alias,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+        )
+        if with_props:
+            props = self._get_properties()
+            # Include and exclude properties
+            if include:
+                props = [prop for prop in props if prop in include]
+            if exclude:
+                props = [prop for prop in props if prop not in exclude]
+
+            # Update the attribute dict with the properties
+            if props:
+                attribs.update({prop: getattr(self, prop) for prop in props})
+        if self.has_relations:
+            for field in self.__db_refs__:  # type: ignore
+                attrib_data = attribs[field]
+                if attrib_data and not isinstance(attrib_data, dict):
+                    attribs[field] = (
+                        attrib_data.to_dict()
+                        if not isinstance(attrib_data, list)
+                        else [
+                            a.to_dict() if not isinstance(a, dict) else a
+                            for a in attrib_data
+                        ]
+                    )
+        if self._id is not None and not include and not exclude:
+            attribs["_id"] = self._id
+        return attribs
+
+    @classmethod
+    def from_bson(cls, bson_raw_data: RawBSONDocument):
+        data = bson_decode(bson_raw_data.raw)
+        data = {
+            cls.__mapping_from_fields__[field]: value for field, value in data.items()
+        }
+        obj = cls(**data)
+        obj._id = data.get("_id")
+        return obj
+
+    @property
+    def data(self) -> "DictStrAny":
+        return self.model_dump(with_props=True)
+
+    @property
+    def _query_data(self) -> "DictStrAny":
+        return self.model_dump(with_props=False)
+
+    @property
+    def _mongo_query_data(self) -> "DictStrAny":
+        return self._query_data
+
+    @classmethod
+    def get_collection_name(cls) -> str:
+        """main method for set collection
+
+        Returns:
+            str: collection name
+        """
+        return cls.__collection_name__ or cls.__name__.lower()
+
+    def serialize(self, fields: Union[Tuple, List]) -> "DictStrAny":
+        data: dict = self.model_dump(include=set(fields))
+        return {f: data[f] for f in fields}
+
+    def serialize_json(self, fields: Union[Tuple, List]) -> str:
+        return json.dumps(self.serialize(fields))
+
+    @property
+    def pk(self):
+        return self._id
+
+    if IS_PYDANTIC_V2:
+
+        @model_validator(mode="before")
+        def validate_all_fields(cls, values):  # type: ignore
+            for field, value in values.items():
+                if isinstance(value, Document) and field not in cls.__db_refs__:
+                    raise ValueError(
+                        f"{field} - cant be instance of Document without Relation"
+                    )
+            return values
+
+    else:
+
+        @root_validator  # type: ignore
+        def validate_all_fields(cls, values):
+            for field, value in values.items():
+                if isinstance(value, Document) and field not in cls.__db_refs__:
+                    raise ValueError(
+                        f"{field} - cant be instance of Document without Relation"
+                    )
+            return values
+
+
+class Document(BaseDocument):
+    @classmethod
+    async def ensure_indexes(cls):
+        """method for create/update/delete indexes if indexes declared in Config property"""
+        if IS_PYDANTIC_V2:
+            indexes = cls.model_config.get("indexes", [])
+        else:
+            indexes = getattr(cls.__config__, "indexes", [])
+        if not all([isinstance(index, IndexModel) for index in indexes]):
+            raise ValueError("indexes must be list of IndexModel instances")
+        if indexes:
+            db_indexes = await cls.Q().list_indexes()
+            indexes_to_create = [
+                i for i in indexes if i.document["name"] not in db_indexes
+            ]
+            indexes_to_delete = [
+                i
+                for i in db_indexes
+                if i not in [i.document["name"] for i in indexes] and i != "_id_"
+            ]
+            result = []
+            if indexes_to_create:
+                try:
+                    result = await cls.Q().create_indexes(indexes_to_create)
+                except MotordanticConnectionError:
+                    pass
+            if indexes_to_delete:
+                for index_name in indexes_to_delete:
+                    await cls.Q().drop_index(index_name)
+                db_indexes = await cls.Q().list_indexes()
+            indexes = set(list(db_indexes.keys()) + result)
+        setattr(cls, "__indexes__", indexes)
 
     async def save(
         self,
@@ -285,94 +422,13 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
     def delete_sync(self) -> None:
         return self._io_loop.run_until_complete(self.delete())
 
-    @classproperty
-    def fields_all(cls) -> list:
-        """return all fields with properties(not document fields)"""
-        fields = list(cls.model_fields.keys())
-        return_fields = fields + cls._get_properties()
-        return return_fields
-
-    @classproperty
-    def manager(cls) -> ODMManager:
-        return cls.__manager__
-
     @classmethod
     def Q(cls) -> "Builder":
         return cls.manager.querybuilder()
 
-    if not IS_PYDANTIC_V2:
-
-        @classproperty
-        def model_fields(cls):
-            return cls.__fields__
-
     @classmethod
     def QSync(cls) -> "SyncQueryBuilder":
         return cls.manager.sync_querybuilder()
-
-    def model_dump(  # type: ignore
-        self,
-        *,
-        include: Optional["AbstractSetIntStr"] = None,
-        exclude: Optional["AbstractSetIntStr"] = None,
-        by_alias: bool = False,
-        exclude_unset: bool = False,
-        exclude_defaults: bool = False,
-        exclude_none: bool = False,
-        with_props: bool = True,
-    ) -> "DictStrAny":
-        """
-        Generate a dictionary representation of the model, optionally specifying which fields to include or exclude.
-
-        """
-        if IS_PYDANTIC_V2:
-            model_dump_func = super().model_dump  # type: ignore
-        else:
-            model_dump_func = super().dict
-        attribs = model_dump_func(
-            include=include,  # type: ignore
-            exclude=exclude,  # type: ignore
-            by_alias=by_alias,
-            exclude_unset=exclude_unset,
-            exclude_defaults=exclude_defaults,
-            exclude_none=exclude_none,
-        )
-        if with_props:
-            props = self._get_properties()
-            # Include and exclude properties
-            if include:
-                props = [prop for prop in props if prop in include]
-            if exclude:
-                props = [prop for prop in props if prop not in exclude]
-
-            # Update the attribute dict with the properties
-            if props:
-                attribs.update({prop: getattr(self, prop) for prop in props})
-        if self.has_relations:
-            for field in self.__db_refs__:  # type: ignore
-                attrib_data = attribs[field]
-                if attrib_data and not isinstance(attrib_data, dict):
-                    attribs[field] = (
-                        attrib_data.to_dict()
-                        if not isinstance(attrib_data, list)
-                        else [
-                            a.to_dict() if not isinstance(a, dict) else a
-                            for a in attrib_data
-                        ]
-                    )
-        if self._id is not None and not include and not exclude:
-            attribs["_id"] = self._id
-        return attribs
-
-    @classmethod
-    def from_bson(cls, bson_raw_data: RawBSONDocument) -> "Document":
-        data = bson_decode(bson_raw_data.raw)
-        data = {
-            cls.__mapping_from_fields__[field]: value for field, value in data.items()
-        }
-        obj = cls(**data)
-        obj._id = data.get("_id")
-        return obj
 
     @classmethod
     def to_db_ref(cls, object_id: Union[str, ObjectId]) -> DBRef:
@@ -386,60 +442,6 @@ class Document(BasePydanticModel, metaclass=DocumentMetaclass):
         db_ref = cls.to_db_ref(object_id=object_id)
         return Relation(db_ref, cls)
 
-    @property
-    def data(self) -> "DictStrAny":
-        return self.model_dump(with_props=True)
-
-    @property
-    def _query_data(self) -> "DictStrAny":
-        return self.model_dump(with_props=False)
-
-    @property
-    def _mongo_query_data(self) -> "DictStrAny":
-        return self._query_data
-
-    @classmethod
-    def get_collection_name(cls) -> str:
-        """main method for set collection
-
-        Returns:
-            str: collection name
-        """
-        return cls.__collection_name__ or cls.__name__.lower()
-
-    def serialize(self, fields: Union[Tuple, List]) -> "DictStrAny":
-        data: dict = self.model_dump(include=set(fields))
-        return {f: data[f] for f in fields}
-
-    def serialize_json(self, fields: Union[Tuple, List]) -> str:
-        return json.dumps(self.serialize(fields))
-
-    @property
-    def pk(self):
-        return self._id
-
-    if IS_PYDANTIC_V2:
-
-        @model_validator(mode="before")
-        def validate_all_fields(cls, values):  # type: ignore
-            for field, value in values.items():
-                if isinstance(value, Document) and field not in cls.__db_refs__:
-                    raise ValueError(
-                        f"{field} - cant be instance of Document without Relation"
-                    )
-            return values
-
-    else:
-
-        @root_validator  # type: ignore
-        def validate_all_fields(cls, values):
-            for field, value in values.items():
-                if isinstance(value, Document) and field not in cls.__db_refs__:
-                    raise ValueError(
-                        f"{field} - cant be instance of Document without Relation"
-                    )
-            return values
-
 
 class DynamcicCollectionMetaclass(DocumentMetaclass):
     __manager_class__ = DynamicCollectionODMManager
@@ -449,7 +451,7 @@ class DynamcicCollectionMetaclass(DocumentMetaclass):
         return DynamicCollectionDocument
 
 
-class DynamicCollectionDocument(Document, metaclass=DynamcicCollectionMetaclass):
+class DynamicCollectionDocument(BaseDocument, metaclass=DynamcicCollectionMetaclass):
     @classmethod
     def Q(cls, collection_name: str) -> "QueryBuilder":  # type: ignore
         return cls.manager.querybuilder(collection_name)

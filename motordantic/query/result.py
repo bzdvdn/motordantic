@@ -2,13 +2,17 @@ from json import dumps
 from typing import Generator, List, Union, Any, Tuple, List, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
-    from ..document import Document
+    from ..document import Document, DynamicCollectionDocument
 
 
 class AggregateResult(object):
-    __slots__ = ('_native_result', '_document_class')
+    __slots__ = ("_native_result", "_document_class")
 
-    def __init__(self, native_result: list, document_class: 'Document'):
+    def __init__(
+        self,
+        native_result: list,
+        document_class: Union["Document", "DynamicCollectionDocument"],
+    ):
         self._native_result = native_result
         self._document_class = document_class
 
@@ -54,16 +58,16 @@ class AggregateResult(object):
         return self._native_result
 
     @property
-    def document_class(self) -> 'Document':
+    def document_class(self) -> "Document":
         return self._document_class
 
 
 class SimpleAggregateResult(object):
-    __slots__ = ('_data', 'document_class')
+    __slots__ = ("_data", "document_class")
 
     def __init__(
         self,
-        document_class: 'Document',
+        document_class: "Document",
         data: dict,
     ):
         self._data = data
@@ -78,11 +82,11 @@ class SimpleAggregateResult(object):
 
 
 class FindResult(object):
-    __slots__ = ('_data', 'document_class')
+    __slots__ = ("_data", "document_class")
 
     def __init__(
         self,
-        document_class: 'Document',
+        document_class: "Document",
         data: list,
     ):
         self._data = data

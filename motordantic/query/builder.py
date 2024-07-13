@@ -337,6 +337,9 @@ class Builder(object):
         session: Optional[ClientSession] = None,
         sort_fields: Optional[Union[Tuple, List]] = None,
         sort: Optional[int] = None,
+        batch_size: Optional[int] = None,
+        hint: Optional[str] = None,
+        allow_disk_use: bool = False,
         **query,
     ) -> AsyncGenerator:
         sort, sort_fields_parsed = sort_validation(sort, sort_fields)
@@ -347,13 +350,23 @@ class Builder(object):
             else:
                 query_params = self._validate_query_data(query)
             find_cursor_method = getattr(self._collection, "find")
-            cursor = find_cursor_method(query_params, session=session)
+            if batch_size is not None:
+                cursor = find_cursor_method(
+                    query_params,
+                    session=session,
+                    batch_size=batch_size,
+                    hint=hint,
+                )
+            else:
+                cursor = find_cursor_method(query_params, session=session, hint=hint)
             if skip_rows is not None:
                 cursor = cursor.skip(skip_rows)
             if limit_rows:
                 cursor = cursor.limit(limit_rows)
             if sort:
                 cursor.sort([(field, sort or 1) for field in sort_fields_parsed])
+            if allow_disk_use:
+                cursor.allow_disk_use(True)
             async for doc in cursor:
                 yield self.odm_manager.document.from_bson(doc)
 
@@ -368,6 +381,9 @@ class Builder(object):
         sort_fields: Optional[Union[Tuple, List]] = None,
         sort: Optional[int] = None,
         with_relations_objects: bool = False,
+        batch_size: Optional[int] = None,
+        hint: Optional[str] = None,
+        allow_disk_use: bool = False,
         **query,
     ) -> FindResult:
         """find method
@@ -390,6 +406,9 @@ class Builder(object):
             session,
             sort_fields,
             sort,
+            batch_size=batch_size,
+            hint=hint,
+            allow_disk_use=allow_disk_use,
             **query,
         )
         data = [doc async for doc in result]
@@ -589,12 +608,14 @@ class Builder(object):
         )
 
     async def _motor_aggreggate_call(
-        self, data: list, session: Optional[ClientSession]
+        self, data: list, session: Optional[ClientSession], allow_disk_use: bool = False
     ) -> AsyncIterable:
         async def context():
             aggregate_cursor = getattr(self._collection, "aggregate")
 
-            async for row in aggregate_cursor(data, session=session):
+            async for row in aggregate_cursor(
+                data, session=session, allowDiskUse=allow_disk_use
+            ):
                 yield row
 
         return context()
@@ -603,7 +624,10 @@ class Builder(object):
         return bson_decode(row.raw)
 
     async def raw_aggregate(
-        self, data: List[Dict[Any, Any]], session: Optional[ClientSession] = None
+        self,
+        data: List[Dict[Any, Any]],
+        session: Optional[ClientSession] = None,
+        allow_disk_use: bool = False,
     ) -> list:
         """raw aggregation query
 
@@ -614,7 +638,7 @@ class Builder(object):
         Returns:
             list: aggregation result
         """
-        result = await self._motor_aggreggate_call(data, session)
+        result = await self._motor_aggreggate_call(data, session, allow_disk_use)
         return [self.from_bson(row) async for row in result]
 
     async def _aggregate(self, *args, **query) -> SimpleAggregateResult:
