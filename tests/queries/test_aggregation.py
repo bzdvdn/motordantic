@@ -340,6 +340,7 @@ async def test_raw_aggregate(connection):
                 "$sort": {"_id": 1},
             },
         ],
+        allow_disk_use=True,
     )
     assert result_raw_group_by_by_inners == [
         {"_id": {"type_id": 1}, "count": 1, "names": ["1"]},

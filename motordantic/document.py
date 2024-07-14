@@ -363,7 +363,7 @@ class Document(BaseDocument):
                 for index_name in indexes_to_delete:
                     await cls.Q().drop_index(index_name)
                 db_indexes = await cls.Q().list_indexes()
-            indexes = set(list(db_indexes.keys()) + result)
+            indexes = set(list(db_indexes.keys()) + result)  # type: ignore
         setattr(cls, "__indexes__", indexes)
 
     async def save(
@@ -444,7 +444,7 @@ class Document(BaseDocument):
 
 
 class DynamcicCollectionMetaclass(DocumentMetaclass):
-    __manager_class__ = DynamicCollectionODMManager
+    __manager_class__ = DynamicCollectionODMManager  # type: ignore
 
     @classmethod
     def _get_document_class(mcs):  # type: ignore
@@ -583,7 +583,7 @@ class DynamicCollectionDocument(BaseDocument, metaclass=DynamcicCollectionMetacl
                 for index_name in indexes_to_delete:
                     await cls.Q(collection_name).drop_index(index_name)
                 db_indexes = await cls.Q(collection_name).list_indexes()
-            indexes = set(list(db_indexes.keys()) + result)
+            indexes = set(list(db_indexes.keys()) + result)  # type: ignore
         setattr(cls, "__indexes__", indexes)
 
 

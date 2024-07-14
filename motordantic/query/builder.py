@@ -18,7 +18,7 @@ from pymongo.collection import WriteConcern
 from motor.core import AgnosticClientSession as ClientSession
 
 from .query import generate_basic_query, Q, QCombination
-from .result import FindResult, SimpleAggregateResult
+from .result import FindResult, SimpleAggregateResult, ProjectionFindResult
 from .extra import group_by_aggregate_generation, generate_name_field
 
 from ..aggregate.expressions import Sum, Max, Min, Avg
@@ -34,7 +34,7 @@ from ..validation import sort_validation
 __all__ = ("Builder",)
 
 if TYPE_CHECKING:
-    from ..manager import ODMManager
+    from ..manager import ODMManager, DynamicCollectionODMManager
     from ..custom_typing import DictStrAny
     from ..document import Document
 
@@ -42,8 +42,14 @@ if TYPE_CHECKING:
 class Builder(object):
     __slots__ = ("odm_manager", "_collection")
 
-    def __init__(self, odm_manager: "ODMManager", query_collectcion_name: str):
-        self.odm_manager: "ODMManager" = odm_manager
+    def __init__(
+        self,
+        odm_manager: Union["ODMManager", "DynamicCollectionODMManager"],
+        query_collectcion_name: str,
+    ):
+        self.odm_manager: Union["ODMManager", "DynamicCollectionODMManager"] = (
+            odm_manager
+        )
         self._collection = self.odm_manager.get_collection(query_collectcion_name)
 
     def _validate_query_data(self, query: Dict) -> "DictStrAny":
@@ -340,6 +346,7 @@ class Builder(object):
         batch_size: Optional[int] = None,
         hint: Optional[str] = None,
         allow_disk_use: bool = False,
+        projection: Optional[dict] = None,
         **query,
     ) -> AsyncGenerator:
         sort, sort_fields_parsed = sort_validation(sort, sort_fields)
@@ -356,9 +363,12 @@ class Builder(object):
                     session=session,
                     batch_size=batch_size,
                     hint=hint,
+                    projection=projection,
                 )
             else:
-                cursor = find_cursor_method(query_params, session=session, hint=hint)
+                cursor = find_cursor_method(
+                    query_params, session=session, hint=hint, projection=projection
+                )
             if skip_rows is not None:
                 cursor = cursor.skip(skip_rows)
             if limit_rows:
@@ -384,8 +394,9 @@ class Builder(object):
         batch_size: Optional[int] = None,
         hint: Optional[str] = None,
         allow_disk_use: bool = False,
+        projection: Optional[dict] = None,
         **query,
-    ) -> FindResult:
+    ) -> Union[FindResult, ProjectionFindResult]:
         """find method
 
         Args:
@@ -397,7 +408,7 @@ class Builder(object):
             sort (Optional[int], optional): sort value -1 or 1. Defaults to None.
 
         Returns:
-            FindResult: Motordantic FindResult
+            Union[FindResult, ProjectionFindResult]: Motordantic FindResult|ProjectionFindResult
         """
         result = await self._find(
             logical_query,
@@ -409,11 +420,14 @@ class Builder(object):
             batch_size=batch_size,
             hint=hint,
             allow_disk_use=allow_disk_use,
+            projection=projection,
             **query,
         )
         data = [doc async for doc in result]
         if with_relations_objects and self.odm_manager.relation_manager:
             data = await self.odm_manager.relation_manager.map_relation_for_array(data)
+        if projection:
+            return ProjectionFindResult(data=data)
         return FindResult(self.odm_manager.document, data)
 
     def _prepare_update_data(self, **fields) -> tuple:
@@ -608,14 +622,22 @@ class Builder(object):
         )
 
     async def _motor_aggreggate_call(
-        self, data: list, session: Optional[ClientSession], allow_disk_use: bool = False
+        self,
+        data: list,
+        session: Optional[ClientSession],
+        allow_disk_use: bool = False,
+        hint: Optional[str] = None,
     ) -> AsyncIterable:
         async def context():
             aggregate_cursor = getattr(self._collection, "aggregate")
-
-            async for row in aggregate_cursor(
-                data, session=session, allowDiskUse=allow_disk_use
-            ):
+            query = dict(
+                pipeline=data,
+                session=session,
+                allowDiskUse=allow_disk_use,
+            )
+            if hint:
+                query["hint"] = hint  # type: ignore
+            async for row in aggregate_cursor(**query):
                 yield row
 
         return context()
@@ -628,6 +650,7 @@ class Builder(object):
         data: List[Dict[Any, Any]],
         session: Optional[ClientSession] = None,
         allow_disk_use: bool = False,
+        hint: Optional[str] = None,
     ) -> list:
         """raw aggregation query
 

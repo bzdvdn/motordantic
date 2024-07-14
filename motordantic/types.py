@@ -13,7 +13,7 @@ from .custom_typing import DocumentType
 
 
 if IS_PYDANTIC_V2:
-    from pydantic import (
+    from pydantic import (  # type: ignore
         GetCoreSchemaHandler,  # type: ignore
         GetJsonSchemaHandler,  # type: ignore
     )

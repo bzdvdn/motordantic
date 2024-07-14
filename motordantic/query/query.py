@@ -13,7 +13,7 @@ __all__ = (
 
 
 if TYPE_CHECKING:
-    from ..manager import ODMManager
+    from ..manager import ODMManager, DynamicCollectionODMManager
     from .builder import Builder
 
 
@@ -202,7 +202,7 @@ class Q(QNode):
 
 
 def generate_basic_query(
-    manager: "ODMManager",
+    manager: Union["ODMManager", "DynamicCollectionODMManager"],
     query: dict,
     with_validate_document_fields: bool = True,
 ) -> dict:

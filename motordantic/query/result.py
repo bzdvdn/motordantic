@@ -58,7 +58,7 @@ class AggregateResult(object):
         return self._native_result
 
     @property
-    def document_class(self) -> "Document":
+    def document_class(self) -> Union["Document", "DynamicCollectionDocument"]:
         return self._document_class
 
 
@@ -67,7 +67,7 @@ class SimpleAggregateResult(object):
 
     def __init__(
         self,
-        document_class: "Document",
+        document_class: Union["Document", "DynamicCollectionDocument"],
         data: dict,
     ):
         self._data = data
@@ -86,7 +86,7 @@ class FindResult(object):
 
     def __init__(
         self,
-        document_class: "Document",
+        document_class: Union["Document", "DynamicCollectionDocument"],
         data: list,
     ):
         self._data = data
@@ -135,6 +135,55 @@ class FindResult(object):
     def serialize_generator(self, fields: Union[Tuple, List]) -> Generator:
         for obj in self.__iter__():
             yield obj.serialize(fields)
+
+    def serialize_json(self, fields: Union[Tuple, List]) -> str:
+        return dumps(self.serialize(fields))
+
+
+class ProjectionFindResult(object):
+    __slots__ = ("_data",)
+
+    def __init__(
+        self,
+        data: list,
+    ):
+        self._data = data
+
+    def __iter__(self):
+        for obj in self._data:
+            yield obj
+
+    @property
+    def data(self) -> List:
+        return [obj.data for obj in self.__iter__()]
+
+    @property
+    def generator(self) -> Generator:
+        return self.__iter__()
+
+    @property
+    def data_generator(self) -> Generator:
+        for obj in self.__iter__():
+            yield obj.data
+
+    @property
+    def list(self) -> List:
+        return list(self.__iter__())
+
+    def json(self) -> str:
+        return dumps(self.data)
+
+    def first(self) -> Any:
+        return next(self.__iter__())
+
+    def serialize(
+        self, fields: Union[Tuple, List], to_list: bool = True
+    ) -> Union[Tuple, List]:
+        return (
+            [{k: obj.get(k) for k in fields} for obj in self.__iter__()]
+            if to_list
+            else tuple({k: obj.get(k) for k in fields} for obj in self.__iter__())
+        )
 
     def serialize_json(self, fields: Union[Tuple, List]) -> str:
         return dumps(self.serialize(fields))

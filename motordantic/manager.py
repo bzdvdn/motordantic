@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorClient
 
 
-class ODMManager(object):
+class BaseODMManager(object):
     __database__: Optional[AgnosticDatabase] = None
     __collection__: Optional[AgnosticCollection] = None
     __connection__: Optional["MotordanticConnection"] = None
@@ -90,12 +90,6 @@ class ODMManager(object):
         assert self.__document__ is not None
         return self.__document__
 
-    def aggregate(self) -> Aggregate:
-        aggregate = Aggregate(
-            self.__document__, self.__document__.get_collection_name()
-        )
-        return aggregate
-
     def _validate_field(self, field: str) -> bool:
         # if field in self.document.__mapping_from_fields__:
         #     return True
@@ -115,6 +109,14 @@ class ODMManager(object):
             else:
                 field_param.append(param)
         return field_param, extra
+
+
+class ODMManager(BaseODMManager):
+    def aggregate(self) -> Aggregate:
+        aggregate = Aggregate(
+            self.__document__, self.__document__.get_collection_name()
+        )
+        return aggregate
 
     def querybuilder(self) -> Builder:
         builder = Builder(self, self.document.get_collection_name())
@@ -152,7 +154,7 @@ class ODMManager(object):
             indexes = set(list(db_indexes.keys()) + result)
 
 
-class DynamicCollectionODMManager(ODMManager):
+class DynamicCollectionODMManager(BaseODMManager):
     def querybuilder(self, collection_name: str) -> Builder:  # type: ignore
         builder = Builder(self, collection_name)
         return builder

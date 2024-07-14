@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Optional, Dict, List, Union
 from ..exceptions import MotordanticValidationError
 from ..query import generate_basic_query, Q, QCombination, AggregateResult
 from ..utils.pydantic import get_model_fields
+from ..session import Session
 
 __all__ = ("Aggregate",)
 
@@ -11,6 +12,14 @@ if TYPE_CHECKING:
 
 
 class Aggregate(object):
+    __slots__ = (
+        "document_class",
+        "pipeline",
+        "collection_name",
+        "_querybuilder",
+        "options",
+    )
+
     def __init__(
         self,
         document_class: Union["Document", "DynamicCollectionDocument"],
@@ -18,6 +27,7 @@ class Aggregate(object):
     ):
         self.document_class = document_class
         self.pipeline: List[Dict] = []
+        self.options: Dict = {}
         self.collection_name = collection_name
         self._querybuilder = (
             self.document_class.Q(collection_name)  # type: ignore
@@ -77,12 +87,12 @@ class Aggregate(object):
         model_fields = get_model_fields(self.document_class)
         if local_field not in model_fields and local_field != "_id":
             raise MotordanticValidationError(
-                f"field - {local_field} not a field from model: {from_.__name__}"
+                f"field - {local_field} not a field from model: {from_.__name__}"  # type: ignore
             )
         from_fields = get_model_fields(from_)
         if foreign_field not in from_fields and foreign_field != "_id":
             raise MotordanticValidationError(
-                f"field - {foreign_field} not a field from model: {self.document_class.__name__}"
+                f"field - {foreign_field} not a field from model: {self.document_class.__name__}"  # type: ignore
             )
         lookup = {
             "from": from_.get_collection_name(),
@@ -92,10 +102,11 @@ class Aggregate(object):
         if as_:
             lookup["as"] = as_
         else:
+            collection_name = from_.get_collection_name()
             lookup["as"] = (
-                f"{from_.__name__.lower()}es"
-                if from_.__name__.endswith("s")
-                else f"{from_.__name__.lower()}s"
+                f"{collection_name.lower()}es"
+                if collection_name.endswith("s")
+                else f"{collection_name.lower()}s"
             )
         self.pipeline.append({"$lookup": lookup})
         return self
@@ -189,8 +200,20 @@ class Aggregate(object):
         self.pipeline.append({"$let": {**let}})
         return self
 
+    def allow_disc_use(self, value: bool) -> "Aggregate":
+        self.options["allowDiscUse"] = value
+        return self
+
+    def hint(self, index: str) -> "Aggregate":
+        self.options["hint"] = index
+        return self
+
+    def session(self, session: Session) -> "Aggregate":
+        self.options["session"] = session
+        return self
+
     async def result(self) -> AggregateResult:
-        result = await self._querybuilder.raw_aggregate(self.pipeline)
+        result = await self._querybuilder.raw_aggregate(self.pipeline, **self.options)
         return AggregateResult(native_result=result, document_class=self.document_class)
 
     def result_sync(self) -> AggregateResult:
@@ -199,5 +222,5 @@ class Aggregate(object):
             if self.document_class._is_dynamic
             else self.document_class.QSync()  # type: ignore
         )
-        result = qsync.raw_aggregate(self.pipeline)
+        result = qsync.raw_aggregate(self.pipeline, **self.options)
         return AggregateResult(native_result=result, document_class=self.document_class)
