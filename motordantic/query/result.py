@@ -155,7 +155,7 @@ class ProjectionFindResult(object):
 
     @property
     def data(self) -> List:
-        return [obj.data for obj in self.__iter__()]
+        return [obj for obj in self.__iter__()]
 
     @property
     def generator(self) -> Generator:
@@ -164,14 +164,14 @@ class ProjectionFindResult(object):
     @property
     def data_generator(self) -> Generator:
         for obj in self.__iter__():
-            yield obj.data
+            yield obj
 
     @property
     def list(self) -> List:
         return list(self.__iter__())
 
     def json(self) -> str:
-        return dumps(self.data)
+        return dumps(self.data, default=str)
 
     def first(self) -> Any:
         return next(self.__iter__())

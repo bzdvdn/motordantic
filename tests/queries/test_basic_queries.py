@@ -113,6 +113,17 @@ async def test_find(connection):
 
 
 @pytest.mark.asyncio
+async def test_find_with_projection(connection):
+    result = await Ticket.Q().find(
+        limit_rows=1, name="second", projection={"_id": 1, "name": 1}
+    )
+    assert len(result.data) == 1
+    assert list(result.data[0].keys()) == ["_id", "name"]
+    assert isinstance(result.json(), str)
+    assert result.serialize(["name"])[0].get("name")
+
+
+@pytest.mark.asyncio
 async def test_async_get(connection):
     # await .test_insert_one()
     data = await Ticket.Q().get(name="second")

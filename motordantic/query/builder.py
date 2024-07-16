@@ -377,8 +377,11 @@ class Builder(object):
                 cursor.sort([(field, sort or 1) for field in sort_fields_parsed])
             if allow_disk_use:
                 cursor.allow_disk_use(True)
+            from_bson_func = self.odm_manager.document.from_bson
+            if projection:
+                from_bson_func = self.odm_manager.document._from_bson
             async for doc in cursor:
-                yield self.odm_manager.document.from_bson(doc)
+                yield from_bson_func(doc)
 
         return context()
 
@@ -525,7 +528,7 @@ class Builder(object):
         return_document = ReturnDocument.AFTER
         replacement = query.pop("replacement", None)
 
-        projection = {f: True for f in projection_fields} if projection_fields else None
+        projection = {f: 1 for f in projection_fields} if projection_fields else None
         extra_params = {
             "return_document": return_document,
             "projection": projection,

@@ -270,13 +270,17 @@ class BaseDocument(BasePydanticModel, metaclass=DocumentMetaclass):
 
     @classmethod
     def from_bson(cls, bson_raw_data: RawBSONDocument):
-        data = bson_decode(bson_raw_data.raw)
-        data = {
-            cls.__mapping_from_fields__[field]: value for field, value in data.items()
-        }
+        data = cls._from_bson(bson_raw_data)
         obj = cls(**data)
         obj._id = data.get("_id")
         return obj
+
+    @classmethod
+    def _from_bson(cls, bson_raw_data: RawBSONDocument) -> dict:
+        data = bson_decode(bson_raw_data.raw)
+        return {
+            cls.__mapping_from_fields__[field]: value for field, value in data.items()
+        }
 
     @property
     def data(self) -> "DictStrAny":
