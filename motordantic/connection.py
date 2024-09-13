@@ -10,13 +10,13 @@ from .manager import ODMManager
 
 class MotordanticConnection(object, metaclass=Singleton):
     __slots__ = (
-        'address',
-        'database_name',
-        'max_pool_size',
-        'server_selection_timeout_ms',
-        'connect_timeout_ms',
-        'socket_timeout_ms',
-        'ssl_cert_path',
+        "address",
+        "database_name",
+        "max_pool_size",
+        "server_selection_timeout_ms",
+        "connect_timeout_ms",
+        "socket_timeout_ms",
+        "ssl_cert_path",
     )
 
     _connections: dict = {}
@@ -41,20 +41,24 @@ class MotordanticConnection(object, metaclass=Singleton):
 
     def _init_mongo_connection(self, connect: bool = False) -> AsyncIOMotorClient:  # type: ignore
         connection_params: dict = {
-            'host': self.address,
-            'connect': connect,
-            'serverSelectionTimeoutMS': self.server_selection_timeout_ms,
-            'maxPoolSize': self.max_pool_size,
-            'connectTimeoutMS': self.connect_timeout_ms,
-            'socketTimeoutMS': self.socket_timeout_ms,
+            "host": self.address,
+            "connect": connect,
+            "serverSelectionTimeoutMS": self.server_selection_timeout_ms,
+            "maxPoolSize": self.max_pool_size,
+            "connectTimeoutMS": self.connect_timeout_ms,
+            "socketTimeoutMS": self.socket_timeout_ms,
         }
         if self.ssl_cert_path:
-            connection_params['tlsCAFile'] = self.ssl_cert_path
-            connection_params['tlsAllowInvalidCertificates'] = bool(self.ssl_cert_path)
+            connection_params["tlsCAFile"] = self.ssl_cert_path
+            connection_params["tlsAllowInvalidCertificates"] = bool(self.ssl_cert_path)
+            connection_params["tls"] = True
+        print(connection_params)
         client = AsyncIOMotorClient(
             **connection_params,
             document_class=RawBSONDocument,
         )
+        print(client)
+        print(client.tls)
         return client
 
     def _get_motor_client(self) -> AsyncIOMotorClient:  # type: ignore
@@ -90,16 +94,16 @@ def connect(
     Returns:
         MotordanticConnection: motordantic connection
     """
-    os.environ['MOTORDANTIC_DATABASE'] = database_name
-    os.environ['MOTORDANTIC_ADDRESS'] = address
-    os.environ['MOTORDANTIC_MAX_POOL_SIZE'] = str(max_pool_size)
-    os.environ['MOTORDANTIC_SERVER_SELECTION_TIMOUT_MS'] = str(
+    os.environ["MOTORDANTIC_DATABASE"] = database_name
+    os.environ["MOTORDANTIC_ADDRESS"] = address
+    os.environ["MOTORDANTIC_MAX_POOL_SIZE"] = str(max_pool_size)
+    os.environ["MOTORDANTIC_SERVER_SELECTION_TIMOUT_MS"] = str(
         server_selection_timeout_ms
     )
-    os.environ['MOTORDANTIC_CONNECT_TIMEOUT_MS'] = str(connect_timeout_ms)
-    os.environ['MOTORDANTIC_SOCKET_TIMEOUT_MS'] = str(socket_timeout_ms)
+    os.environ["MOTORDANTIC_CONNECT_TIMEOUT_MS"] = str(connect_timeout_ms)
+    os.environ["MOTORDANTIC_SOCKET_TIMEOUT_MS"] = str(socket_timeout_ms)
     if ssl_cert_path:
-        os.environ['MOTORDANTIC_SSL_CERT_PATH'] = ssl_cert_path
+        os.environ["MOTORDANTIC_SSL_CERT_PATH"] = ssl_cert_path
     connection = MotordanticConnection(
         address=address,
         database_name=database_name,

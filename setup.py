@@ -8,7 +8,7 @@ def read(f):
 
 setup(
     name="motordantic",
-    version="0.2.0a2",
+    version="0.2.1a1",
     packages=find_packages(exclude=("tests", "docs", "examples")),
     install_requires=[
         "pydantic>=1.10",
