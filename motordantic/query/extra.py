@@ -35,7 +35,7 @@ __all__ = (
 )
 
 if TYPE_CHECKING:
-    from ..document import Document
+    from ..document import Document, DynamicCollectionDocument
 
 
 class ExtraQueryMapper(object):
@@ -46,7 +46,9 @@ class ExtraQueryMapper(object):
         "field_name",
     )
 
-    def __init__(self, document: "Document", field_name: str):
+    def __init__(
+        self, document: Union["Document", "DynamicCollectionDocument"], field_name: str
+    ):
         self.field_name = field_name
         self.document = document
 

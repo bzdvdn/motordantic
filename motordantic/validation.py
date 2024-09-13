@@ -15,12 +15,14 @@ if not IS_PYDANTIC_V2:
 __all__ = ("validate_field_value", "sort_validation")
 
 if TYPE_CHECKING:
-    from .document import Document
+    from .document import Document, DynamicCollectionDocument
     from .custom_typing import DocumentType
 
 
 def call_validate(
-    document: Union["Document", "DocumentType"], field_name: str, value: Any
+    document: Union["Document", "DocumentType", "DynamicCollectionDocument"],
+    field_name: str,
+    value: Any,
 ) -> Any:
     if IS_PYDANTIC_V2:
         if field_name == "_id":
@@ -59,7 +61,9 @@ def call_validate(
 
 
 def validate_field_value(
-    document: Union["Document", "DocumentType"], field_name: str, value: Any
+    document: Union["Document", "DocumentType", "DynamicCollectionDocument"],
+    field_name: str,
+    value: Any,
 ) -> Any:
     """extra helper value validation
 
@@ -109,7 +113,9 @@ def sort_validation(
     return sort, sort_fields
 
 
-def validate_object_id(document: "Document", value: str) -> ObjectId:
+def validate_object_id(
+    document: Union["Document", "DynamicCollectionDocument"], value: str
+) -> ObjectId:
     try:
         o_id = ObjectId(value)
     except InvalidId as e:
